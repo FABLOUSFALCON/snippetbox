@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/FABLOUSFALCON/snippetbox/internal/models"
 	_ "github.com/go-sql-driver/mysql"
 )
 
 type application struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	snippets *models.SnippetModel
 }
 
 func main() {
@@ -39,7 +41,8 @@ func main() {
 	}()
 
 	app := application{
-		logger: logger,
+		logger:   logger,
+		snippets: &models.SnippetModel{DB: db},
 	}
 
 	// Print a log message to say that the server is starting.
