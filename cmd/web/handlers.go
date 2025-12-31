@@ -11,8 +11,6 @@ import (
 	"github.com/FABLOUSFALCON/snippetbox/internal/models"
 )
 
-// Define a home handler function which writes a byte slice containing
-// "Hello form Snippetbox" as the response body.
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Server", "Go")
 
@@ -22,29 +20,27 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, snippet := range snippets {
-		if _, err := fmt.Fprintf(w, "%+v\n", snippet); err != nil {
-			return
-		}
+	files := []string{
+		"./ui/html/base.tmpl",
+		"./ui/html/pages/home.tmpl",
+		"./ui/html/partials/nav.tmpl",
 	}
-	// files := []string{
-	// 	"./ui/html/base.tmpl",
-	// 	"./ui/html/pages/home.tmpl",
-	// 	"./ui/html/partials/nav.tmpl",
-	// }
-	// // Use the template.ParseFiles() function to read the files and store the
-	// // templates in a template set. Notice that we use ... to pass the contents
-	// // of the files slice as variadic arguments.
-	// ts, err := template.ParseFiles(files...)
-	// if err != nil {
-	// 	app.serverError(w, r, err)
-	// 	return
-	// }
-	//
-	// if err := ts.ExecuteTemplate(w, "base", nil); err != nil {
-	// 	app.serverError(w, r, err)
-	// 	return
-	// }
+	// Use the template.ParseFiles() function to read the files and store the
+	// templates in a template set. Notice that we use ... to pass the contents
+	// of the files slice as variadic arguments.
+	ts, err := template.ParseFiles(files...)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	data := templateData{
+		Snippets: snippets,
+	}
+
+	if err := ts.ExecuteTemplate(w, "base", data); err != nil {
+		app.serverError(w, r, err)
+	}
 }
 
 func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
