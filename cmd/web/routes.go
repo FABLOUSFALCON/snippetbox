@@ -1,8 +1,12 @@
 package main
 
-import "net/http"
+import (
+	"net/http"
 
-func (app *application) routes() *http.ServeMux {
+	"github.com/justinas/alice"
+)
+
+func (app *application) routes() http.Handler {
 	// Use the http.NewServeMux() funciton to initialize a new new servemux, then
 	// register the home function as the handler for the "/" URL pattern.
 	mux := http.NewServeMux()
@@ -14,7 +18,10 @@ func (app *application) routes() *http.ServeMux {
 
 	mux.HandleFunc("GET	/{$}", app.home)
 	mux.HandleFunc("GET	/snippet/view/{id}", app.snippetView)
-	mux.HandleFunc("GET	/snippet/create", app.snippetCreate)
+	mux.HandleFunc("GET	/snippet/create/", app.snippetCreate)
 	mux.HandleFunc("POST	/snippet/create", app.snippetCreatePost)
-	return mux
+
+	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
+
+	return standard.Then(mux)
 }
