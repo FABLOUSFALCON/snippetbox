@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+type SnippetModelInterface interface {
+	Insert(title, content string, expires int) (int, error)
+	Get(id int) (Snippet, error)
+	Latest() ([]Snippet, error)
+}
+
 type Snippet struct {
 	ID      int
 	Title   string
@@ -36,7 +42,7 @@ func (m *SnippetModel) Insert(title string, content string, expires int) (int, e
 	return int(id), nil
 }
 
-func (m *SnippetModel) GET(id int) (Snippet, error) {
+func (m *SnippetModel) Get(id int) (Snippet, error) {
 	stmt := `SELECT id, title, content, created, expires FROM snippets
 									WHERE expires > UTC_TIMESTAMP() AND id = ?`
 
