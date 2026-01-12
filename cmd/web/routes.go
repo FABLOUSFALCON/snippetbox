@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 
+	"github.com/FABLOUSFALCON/snippetbox/ui"
 	"github.com/justinas/alice"
 )
 
@@ -12,9 +13,7 @@ func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	// Adding FileServe to serve the static files.
-	fs := http.FileServer(http.Dir("./ui/static/"))
-	// Adding the Handler to serve static files.
-	mux.Handle("GET /static/", http.StripPrefix("/static", fs))
+	mux.Handle("GET /static/", http.FileServerFS(ui.Files))
 
 	dynamic := alice.New(app.sessionManager.LoadAndSave, noSurf, app.authenticate)
 
@@ -30,6 +29,8 @@ func (app *application) routes() http.Handler {
 	mux.Handle("GET /snippet/create", protected.ThenFunc(app.snippetCreate))
 	mux.Handle("POST /snippet/create", protected.ThenFunc(app.snippetCreatePost))
 	mux.Handle("POST /user/logout", protected.ThenFunc(app.userLogoutPost))
+
+	mux.Handle("GET /ping", dynamic.ThenFunc(ping))
 
 	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
 	return standard.Then(mux)

@@ -165,6 +165,7 @@ func (app *application) userLogin(w http.ResponseWriter, r *http.Request) {
 	app.render(w, r, http.StatusOK, "login.tmpl", data)
 }
 
+// userLoginPost is a handlerr that validates the user data and adds authenticatedUserID in sessionManager
 func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 	var form userLoginForm
 
@@ -221,4 +222,10 @@ func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
 	app.sessionManager.Put(r.Context(), "flash", "You've been logged out succesfully!")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func ping(w http.ResponseWriter, _ *http.Request) {
+	if _, err := w.Write([]byte("OK")); err != nil {
+		return
+	}
 }
