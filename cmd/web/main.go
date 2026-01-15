@@ -86,7 +86,6 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
-
 	// Print a log message to say that the server is starting.
 	logger.Info("Starting server", slog.String("addr", *addr))
 
