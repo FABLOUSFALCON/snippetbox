@@ -109,7 +109,7 @@ func (m *UserModel) Get(ID int) (User, error) {
 func (m *UserModel) PasswordUpdate(id int, currentPassword, newPassword string) error {
 	var currentHashedPassword []byte
 
-	stmt := `SELECT hashed_password FROM users WHERE id == ?`
+	stmt := `SELECT hashed_password FROM users WHERE id = ?`
 	err := m.DB.QueryRow(stmt, id).Scan(&currentHashedPassword)
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func (m *UserModel) PasswordUpdate(id int, currentPassword, newPassword string) 
 		return err
 	}
 
-	stmt = `UPDATE users SET hashed_password = ? WHERE id == ?`
+	stmt = `UPDATE users SET hashed_password = ? WHERE id = ?`
 
 	_, err = m.DB.Exec(stmt, newHashedPassword, id)
 	return err

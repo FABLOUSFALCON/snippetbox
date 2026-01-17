@@ -33,7 +33,7 @@ type userLoginForm struct {
 type accountPasswordUpdateForm struct {
 	CurrentPassword         string `form:"currentPassword"`
 	NewPassword             string `form:"newPassword"`
-	NewPasswordConfirmation string `form:"NewPasswordConfirmation"`
+	NewPasswordConfirmation string `form:"newPasswordConfirmation"`
 	validator.Validator     `form:"-"`
 }
 
