@@ -2,7 +2,6 @@
 <nav>
 <div>
 <a href='/'>Home</a>
-<!-- Include a new link, visible to all users -->
 <a href='/about'>About</a>
 {{if .IsAuthenticated}}
 <a href='/snippet/create'>Create snippet</a>
@@ -10,6 +9,8 @@
 </div>
 <div>
 {{if .IsAuthenticated}}
+<!-- Add the view account link for authenticated users -->
+<a href='/account/view'>Account</a>
 <form action='/user/logout' method='POST'>
 <input type='hidden' name='csrf_token' value='{{.CSRFToken}}'>
 <button>Logout</button>

@@ -37,7 +37,7 @@ func main() {
 	// Adding our custom logger using log/slog package.
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
-		// AddSource: true,
+		// AddSource: true,]
 	}))
 
 	templateCache, err := newTemplateCache()
