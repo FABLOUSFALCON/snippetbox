@@ -14,17 +14,19 @@ func newTestDB(t *testing.T) *sql.DB {
 
 	script, err := os.ReadFile("./testdata/setup.sql")
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 	_, err = db.Exec(string(script))
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		defer db.Close()
+		defer func() {
+			_ = db.Close()
+		}()
 
 		script, err := os.ReadFile("./testdata/teardown.sql")
 		if err != nil {
