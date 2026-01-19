@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,7 +30,7 @@ type application struct {
 	sessionManager *scs.SessionManager
 }
 
-func main() {
+func run() error {
 	addr := flag.String("addr", ":4001", "HTTP network address")
 	dsn := flag.String("dsn", "web:lolamancer@/snippetbox?parseTime=true", "MySQL data source name")
 	debug := flag.Bool("debug", false, "Enable debug mode")
@@ -43,18 +46,20 @@ func main() {
 	templateCache, err := newTemplateCache()
 	if err != nil {
 		logger.Error(err.Error())
-		os.Exit(1)
-		return
+
+		return err
 	}
 
 	db, err := openDB(*dsn)
 	if err != nil {
 		logger.Error(err.Error())
-		os.Exit(1)
+
+		return err
 	}
 
 	defer func() {
-		if err := db.Close(); err != nil {
+		err := db.Close()
+		if err != nil {
 			logger.Error(err.Error())
 		}
 	}()
@@ -78,6 +83,7 @@ func main() {
 
 	tlsConfig := &tls.Config{
 		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
+		MinVersion:       tls.VersionTLS12,
 	}
 
 	srv := &http.Server{
@@ -93,8 +99,18 @@ func main() {
 	logger.Info("Starting server", slog.String("addr", *addr))
 
 	err = srv.ListenAndServeTLS("./tls/localhost+1.pem", "./tls/localhost+1-key.pem")
-	logger.Error(err.Error())
-	os.Exit(1)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func main() {
+	err := run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func openDB(dsn string) (*sql.DB, error) {
@@ -103,10 +119,15 @@ func openDB(dsn string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	err = db.Ping()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = db.PingContext(ctx)
 	if err != nil {
 		_ = db.Close()
+
 		return nil, err
 	}
+
 	return db, nil
 }

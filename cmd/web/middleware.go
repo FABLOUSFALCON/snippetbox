@@ -11,7 +11,8 @@ import (
 
 func commonHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' fonts.googleapis.com; font-src fonts.gstatic.com")
+		w.Header().
+			Set("Content-Security-Policy", "default-src 'self'; style-src 'self' fonts.googleapis.com; font-src fonts.gstatic.com")
 		w.Header().Set("Referrer-Policy", "origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "deny")
@@ -30,7 +31,13 @@ func (app *application) logRequest(next http.Handler) http.Handler {
 			uri    = r.URL.RequestURI()
 		)
 
-		app.logger.Info("received request", slog.String("ip", ip), slog.String("proto", proto), slog.String("method", method), slog.String("uri", uri))
+		app.logger.Info(
+			"received request",
+			slog.String("ip", ip),
+			slog.String("proto", proto),
+			slog.String("method", method),
+			slog.String("uri", uri),
+		)
 
 		next.ServeHTTP(w, r)
 	})
@@ -54,6 +61,7 @@ func (app *application) requireAuthencation(next http.Handler) http.Handler {
 		if !app.isAuthenticated(r) {
 			app.sessionManager.Put(r.Context(), "redirectPathAfterLogin", r.URL.Path)
 			http.Redirect(w, r, "/user/login", http.StatusSeeOther)
+
 			return
 		}
 
@@ -68,12 +76,14 @@ func (app *application) authenticate(next http.Handler) http.Handler {
 		id := app.sessionManager.GetInt(r.Context(), "authenticatedUserID")
 		if id == 0 {
 			next.ServeHTTP(w, r)
+
 			return
 		}
 
 		exists, err := app.users.Exists(id)
 		if err != nil {
 			app.serverError(w, r, err)
+
 			return
 		}
 

@@ -25,21 +25,30 @@ func (app *application) serverError(w http.ResponseWriter, r *http.Request, err 
 	if app.debug {
 		body := fmt.Sprintf("%s\n%s", err, trace)
 		http.Error(w, body, http.StatusInternalServerError)
+
 		return
 	}
 
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
 
+//nolint:unparam //unparam status is kept for future extensibility
 func (app *application) clientError(w http.ResponseWriter, status int) {
 	http.Error(w, http.StatusText(status), status)
 }
 
-func (app *application) render(w http.ResponseWriter, r *http.Request, status int, page string, data templateData) {
+func (app *application) render(
+	w http.ResponseWriter,
+	r *http.Request,
+	status int,
+	page string,
+	data templateData,
+) {
 	ts, ok := app.templateCache[page]
 	if !ok {
 		err := fmt.Errorf("the template %s does not exist", page)
 		app.serverError(w, r, err)
+
 		return
 	}
 
@@ -52,6 +61,7 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, status in
 	err := ts.ExecuteTemplate(buf, "base", data)
 	if err != nil {
 		app.serverError(w, r, err)
+
 		return
 	}
 
@@ -61,6 +71,7 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, status in
 
 	if _, err := buf.WriteTo(w); err != nil {
 		app.logger.Error(err.Error())
+
 		return
 	}
 }
@@ -88,7 +99,7 @@ func (app *application) decodePostForm(r *http.Request, dst any) error {
 			panic(err)
 		}
 
-		return err
+		return fmt.Errorf("form decode failed: %w", err)
 	}
 
 	return nil

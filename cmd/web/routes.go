@@ -8,7 +8,7 @@ import (
 )
 
 func (app *application) routes() http.Handler {
-	// Use the http.NewServeMux() funciton to initialize a new new servemux, then
+	// Use the http.NewServeMux() function to initialize a  new servemux, then
 	// register the home function as the handler for the "/" URL pattern.
 	mux := http.NewServeMux()
 
@@ -37,5 +37,6 @@ func (app *application) routes() http.Handler {
 	mux.Handle("POST /account/password/update", protected.ThenFunc(app.accountPasswordUpdatePost))
 
 	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
+
 	return standard.Then(mux)
 }

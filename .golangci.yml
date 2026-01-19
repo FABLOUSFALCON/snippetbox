@@ -1,0 +1,124 @@
+version: "2"
+
+run:
+  go: "1.25.5"
+  timeout: 5m
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+  exclusions:
+    generated: strict
+
+linters:
+  enable:
+    # --- correctness & safety ---
+    - govet
+    - staticcheck
+    - errcheck
+    - errchkjson
+    - ineffassign
+    - wastedassign
+    - unparam
+    - unconvert
+    - makezero
+
+    # --- security ---
+    - gosec
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+
+    # --- error handling ---
+    - errorlint
+    - wrapcheck
+    - nilnil
+    - nilnesserr
+
+    # --- context / concurrency ---
+    - contextcheck
+    - fatcontext
+    - noctx
+    - copyloopvar
+
+    # --- complexity & maintainability ---
+    - gocritic
+    - gocyclo
+    - gocognit
+    - nestif
+    - funlen
+    - prealloc
+    - predeclared
+
+    # --- tests ---
+    - thelper
+    - tparallel
+    - usetesting
+
+    # --- hygiene ---
+    - misspell
+    - dupword
+    - whitespace
+    - nolintlint
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    nakedret:
+      max-func-lines: 0
+
+    gocognit:
+      min-complexity: 15
+
+    funlen:
+      lines: 80
+      statements: 40
+
+    gosec:
+      excludes:
+        - G104 # unhandled errors (too noisy early on)
+        - G307 # defer Close false positives
+
+    govet:
+      enable:
+        - shadow
+      settings:
+        shadow:
+          strict: true
+
+    staticcheck:
+      checks:
+        - all
+
+    wrapcheck:
+      ignore-package-globs:
+        - net/http
+        - database/sql
+
+  exclusions:
+    generated: strict
+
+    rules:
+      # tests are allowed to be looser
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - funlen
+          - gocyclo
+
+      # allow TODOs while learning
+      - text: "TODO"
+        linters:
+          - godox
+
+      - text: '^shadow: declaration of "(err|ok)" shadows declaration'
+        linters:
+          - govet

@@ -44,9 +44,10 @@ func ping(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
-	snippets, err := app.snippets.Latest()
+	snippets, err := app.snippets.Latest(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
+
 		return
 	}
 
@@ -60,16 +61,18 @@ func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil || id < 1 {
 		http.NotFound(w, r)
+
 		return
 	}
 
-	snippet, err := app.snippets.Get(id)
+	snippet, err := app.snippets.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, models.ErrNoRecord) {
 			http.NotFound(w, r)
 		} else {
 			app.serverError(w, r, err)
 		}
+
 		return
 	}
 
@@ -90,6 +93,7 @@ func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		app.clientError(w, http.StatusBadRequest)
+
 		return
 	}
 
@@ -98,28 +102,39 @@ func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request
 	err := app.decodePostForm(r, &form)
 	if err != nil {
 		app.clientError(w, http.StatusBadRequest)
+
 		return
 	}
 
 	form.CheckField(validator.NotBlank(form.Title), "title", "This field cannot be blank.")
-	form.CheckField(validator.MaxChars(form.Title, 100), "title", "This field cannot be more then 100 characters long.")
+	form.CheckField(
+		validator.MaxChars(form.Title, 100),
+		"title",
+		"This field cannot be more then 100 characters long.",
+	)
 	form.CheckField(validator.NotBlank(form.Content), "content", "This field cannot be blank")
-	form.CheckField(validator.PermittedValue(form.Expires, 1, 7, 365), "expires", "This field must be equal 1, 7, or 365.")
+	form.CheckField(
+		validator.PermittedValue(form.Expires, 1, 7, 365),
+		"expires",
+		"This field must be equal 1, 7, or 365.",
+	)
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
 		app.render(w, r, http.StatusUnprocessableEntity, "create.tmpl", data)
+
 		return
 	}
 
-	id, err := app.snippets.Insert(form.Title, form.Content, form.Expires)
+	id, err := app.snippets.Insert(r.Context(), form.Title, form.Content, form.Expires)
 	if err != nil {
 		app.serverError(w, r, err)
+
 		return
 	}
 
-	app.sessionManager.Put(r.Context(), "flash", "Snippet succesfully created!")
+	app.sessionManager.Put(r.Context(), "flash", "Snippet successfully created!")
 
 	http.Redirect(w, r, fmt.Sprintf("/snippet/view/%d", id), http.StatusSeeOther)
 }
@@ -136,19 +151,29 @@ func (app *application) userSignupPost(w http.ResponseWriter, r *http.Request) {
 	err := app.decodePostForm(r, &form)
 	if err != nil {
 		app.clientError(w, http.StatusBadRequest)
+
 		return
 	}
 
 	form.CheckField(validator.NotBlank(form.Name), "name", "This field cannot be blank")
 	form.CheckField(validator.NotBlank(form.Email), "email", "This field cannot be blank")
-	form.CheckField(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
+	form.CheckField(
+		validator.Matches(form.Email, validator.EmailRX),
+		"email",
+		"This field must be a valid email address",
+	)
 	form.CheckField(validator.NotBlank(form.Password), "password", "This field cannot be blank")
-	form.CheckField(validator.MinChars(form.Password, 8), "password", "This field must be at least 8 characters long")
+	form.CheckField(
+		validator.MinChars(form.Password, 8),
+		"password",
+		"This field must be at least 8 characters long",
+	)
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
 		app.render(w, r, http.StatusUnprocessableEntity, "signup.tmpl", data)
+
 		return
 	}
 
@@ -184,17 +209,23 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 
 	if err := app.decodePostForm(r, &form); err != nil {
 		app.clientError(w, http.StatusBadRequest)
+
 		return
 	}
 
 	form.CheckField(validator.NotBlank(form.Email), "email", "This field cannot be blank")
-	form.CheckField(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
+	form.CheckField(
+		validator.Matches(form.Email, validator.EmailRX),
+		"email",
+		"This field must be a valid email address",
+	)
 	form.CheckField(validator.NotBlank(form.Password), "password", "This field cannot be blank")
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
 		app.render(w, r, http.StatusUnprocessableEntity, "login.tmpl", data)
+
 		return
 	}
 
@@ -216,6 +247,7 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 	err = app.sessionManager.RenewToken(r.Context())
 	if err != nil {
 		app.serverError(w, r, err)
+
 		return
 	}
 
@@ -224,6 +256,7 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 	path := app.sessionManager.PopString(r.Context(), "redirectPathAfterLogin")
 	if path != "" {
 		http.Redirect(w, r, path, http.StatusSeeOther)
+
 		return
 	}
 
@@ -231,14 +264,16 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
-	if err := app.sessionManager.RenewToken(r.Context()); err != nil {
+	err := app.sessionManager.RenewToken(r.Context())
+	if err != nil {
 		app.serverError(w, r, err)
+
 		return
 	}
 
 	app.sessionManager.Remove(r.Context(), "authenticatedUserID")
 
-	app.sessionManager.Put(r.Context(), "flash", "You've been logged out succesfully!")
+	app.sessionManager.Put(r.Context(), "flash", "You've been logged out successfully!")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -257,6 +292,7 @@ func (app *application) accountView(w http.ResponseWriter, r *http.Request) {
 		} else {
 			app.serverError(w, r, err)
 		}
+
 		return
 	}
 
@@ -278,20 +314,42 @@ func (app *application) accountPasswordUpdatePost(w http.ResponseWriter, r *http
 
 	if err := app.decodePostForm(r, &form); err != nil {
 		app.clientError(w, http.StatusBadRequest)
+
 		return
 	}
 
-	form.CheckField(validator.NotBlank(form.CurrentPassword), "currentPassword", "This field cannot be blank")
-	form.CheckField(validator.NotBlank(form.NewPassword), "newPassword", "This field cannot be blank")
-	form.CheckField(validator.MinChars(form.NewPassword, 8), "newPassword", "This field must be at least 8 characters long")
-	form.CheckField(validator.NotBlank(form.NewPasswordConfirmation), "newPasswordConfirmation", "This field cannot be blank")
-	form.CheckField(form.NewPassword == form.NewPasswordConfirmation, "newPasswordConfirmation", "Passwords do not match")
+	form.CheckField(
+		validator.NotBlank(form.CurrentPassword),
+		"currentPassword",
+		"This field cannot be blank",
+	)
+	form.CheckField(
+		validator.NotBlank(form.NewPassword),
+		"newPassword",
+		"This field cannot be blank",
+	)
+	form.CheckField(
+		validator.MinChars(form.NewPassword, 8),
+		"newPassword",
+		"This field must be at least 8 characters long",
+	)
+	form.CheckField(
+		validator.NotBlank(form.NewPasswordConfirmation),
+		"newPasswordConfirmation",
+		"This field cannot be blank",
+	)
+	form.CheckField(
+		form.NewPassword == form.NewPasswordConfirmation,
+		"newPasswordConfirmation",
+		"Passwords do not match",
+	)
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
 
 		app.render(w, r, http.StatusUnprocessableEntity, "password.tmpl", data)
+
 		return
 	}
 
@@ -309,6 +367,7 @@ func (app *application) accountPasswordUpdatePost(w http.ResponseWriter, r *http
 		} else {
 			app.serverError(w, r, err)
 		}
+
 		return
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"text/template"
@@ -25,6 +26,7 @@ func humanDate(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
+
 	return t.UTC().Format("02 Jan 2006 at 15:04")
 }
 
@@ -38,7 +40,7 @@ func newTemplateCache() (map[string]*template.Template, error) {
 
 	pages, err := fs.Glob(ui.Files, "html/pages/*.tmpl")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("finding page templates failed: %w", err)
 	}
 
 	// Loop through the page filepaths one-by-one.
@@ -54,7 +56,7 @@ func newTemplateCache() (map[string]*template.Template, error) {
 		}
 		ts, err := template.New(name).Funcs(functions).ParseFS(ui.Files, patterns...)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parsing template failed: %w", err)
 		}
 
 		// Add the template set to the map, using the name of the page

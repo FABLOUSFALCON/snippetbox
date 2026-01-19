@@ -1,16 +1,17 @@
-// Package models package works as a medium to access snippets database
+// Package models contains data models and database interaction logic.
 package models
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
 )
 
 type SnippetModelInterface interface {
-	Insert(title, content string, expires int) (int, error)
-	Get(id int) (Snippet, error)
-	Latest() ([]Snippet, error)
+	Insert(ctx context.Context, title, content string, expires int) (int, error)
+	Get(ctx context.Context, id int) (Snippet, error)
+	Latest(ctx context.Context) ([]Snippet, error)
 }
 
 type Snippet struct {
@@ -25,11 +26,13 @@ type SnippetModel struct {
 	DB *sql.DB
 }
 
-func (m *SnippetModel) Insert(title string, content string, expires int) (int, error) {
-	stmt := `INSERT INTO snippets (title, content, created, expires)
-									VALUES (?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY))`
+func (m *SnippetModel) Insert(ctx context.Context, title, content string, expires int) (int, error) {
+	stmt := `
+		INSERT INTO snippets (title, content, created, expires)
+		VALUES (?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY))
+	`
 
-	result, err := m.DB.Exec(stmt, title, content, expires)
+	result, err := m.DB.ExecContext(ctx, stmt, title, content, expires)
 	if err != nil {
 		return 0, err
 	}
@@ -42,55 +45,62 @@ func (m *SnippetModel) Insert(title string, content string, expires int) (int, e
 	return int(id), nil
 }
 
-func (m *SnippetModel) Get(id int) (Snippet, error) {
-	stmt := `SELECT id, title, content, created, expires FROM snippets
-									WHERE expires > UTC_TIMESTAMP() AND id = ?`
+func (m *SnippetModel) Get(ctx context.Context, id int) (Snippet, error) {
+	stmt := `
+		SELECT id, title, content, created, expires
+		FROM snippets
+		WHERE expires > UTC_TIMESTAMP() AND id = ?
+	`
 
-	row := m.DB.QueryRow(stmt, id)
+	row := m.DB.QueryRowContext(ctx, stmt, id)
+
 	var s Snippet
-
 	err := row.Scan(&s.ID, &s.Title, &s.Content, &s.Created, &s.Expires)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Snippet{}, ErrNoRecord
-		} else {
-			return Snippet{}, err
 		}
+		return Snippet{}, err
 	}
 
 	return s, nil
 }
 
-// Latest will return 10 most recently created snippets.
-func (m *SnippetModel) Latest() ([]Snippet, error) {
-	stmt := `SELECT id, title, content, created, expires FROM snippets
-									WHERE expires > UTC_TIMESTAMP() ORDER BY id DESC LIMIT 10`
+func (m *SnippetModel) Latest(ctx context.Context) ([]Snippet, error) {
+	stmt := `
+		SELECT id, title, content, created, expires
+		FROM snippets
+		WHERE expires > UTC_TIMESTAMP()
+		ORDER BY id DESC
+		LIMIT 10
+	`
 
-	row, err := m.DB.Query(stmt)
+	rows, err := m.DB.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
-
 	defer func() {
-		if err := row.Close(); err != nil {
-			return
-		}
+		_ = rows.Close()
 	}()
 
 	var snippets []Snippet
 
-	for row.Next() {
-		var snippet Snippet
-
-		err = row.Scan(&snippet.ID, &snippet.Title, &snippet.Content, &snippet.Created, &snippet.Expires)
+	for rows.Next() {
+		var s Snippet
+		err := rows.Scan(
+			&s.ID,
+			&s.Title,
+			&s.Content,
+			&s.Created,
+			&s.Expires,
+		)
 		if err != nil {
 			return nil, err
 		}
-		snippets = append(snippets, snippet)
-
+		snippets = append(snippets, s)
 	}
 
-	if err := row.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 

@@ -181,6 +181,7 @@ func TestUserSignup(t *testing.T) {
 			form.Add("password", tC.userPassword)
 			form.Add("csrf_token", tC.csrfToken)
 
+			//nolint:govet // body is shadowed for readability
 			code, _, body := ts.postForm(t, "/user/signup", form)
 
 			assert.Equal(t, code, tC.wantCode)

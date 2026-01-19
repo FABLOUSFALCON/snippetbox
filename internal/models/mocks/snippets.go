@@ -1,6 +1,7 @@
 package mocks
 
 import (
+	"context"
 	"time"
 
 	"github.com/FABLOUSFALCON/snippetbox/internal/models"
@@ -16,11 +17,19 @@ var mockSnippet = models.Snippet{
 
 type SnippetModel struct{}
 
-func (m *SnippetModel) Insert(title, content string, expires int) (int, error) {
+func (m *SnippetModel) Insert(
+	ctx context.Context,
+	title string,
+	content string,
+	expires int,
+) (int, error) {
 	return 2, nil
 }
 
-func (m *SnippetModel) Get(id int) (models.Snippet, error) {
+func (m *SnippetModel) Get(
+	ctx context.Context,
+	id int,
+) (models.Snippet, error) {
 	switch id {
 	case 1:
 		return mockSnippet, nil
@@ -29,6 +38,8 @@ func (m *SnippetModel) Get(id int) (models.Snippet, error) {
 	}
 }
 
-func (m *SnippetModel) Latest() ([]models.Snippet, error) {
+func (m *SnippetModel) Latest(
+	ctx context.Context,
+) ([]models.Snippet, error) {
 	return []models.Snippet{mockSnippet}, nil
 }

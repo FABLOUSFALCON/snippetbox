@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"html"
 	"io"
 	"log/slog"
@@ -21,6 +22,8 @@ import (
 var csrfTokenRX = regexp.MustCompile(`<input type='hidden' name='csrf_token' value='(.+)'>`)
 
 func extractCSRFToken(t *testing.T, body string) string {
+	t.Helper()
+
 	matches := csrfTokenRX.FindStringSubmatch(body)
 	if len(matches) < 2 {
 		t.Fatal("no csrf token found in body")
@@ -30,6 +33,8 @@ func extractCSRFToken(t *testing.T, body string) string {
 }
 
 func newTestApplication(t *testing.T) *application {
+	t.Helper()
+
 	templateCache, err := newTemplateCache()
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +61,8 @@ type testServer struct {
 }
 
 func newTestServer(t *testing.T, h http.Handler) *testServer {
+	t.Helper()
+
 	ts := httptest.NewTLSServer(h)
 
 	jar, err := cookiejar.New(nil)
@@ -73,26 +80,53 @@ func newTestServer(t *testing.T, h http.Handler) *testServer {
 }
 
 func (ts *testServer) get(t *testing.T, urlPath string) (int, http.Header, string) {
-	rs, err := ts.Client().Get(ts.URL + urlPath)
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		ts.URL+urlPath,
+		nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	defer func() {
-		_ = rs.Body.Close()
-	}()
+	rs, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Body.Close()
 
 	body, err := io.ReadAll(rs.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	body = bytes.TrimSpace(body)
 
 	return rs.StatusCode, rs.Header, string(body)
 }
 
-func (ts *testServer) postForm(t *testing.T, urlPath string, form url.Values) (int, http.Header, string) {
-	req, err := http.NewRequest(http.MethodPost, ts.URL+urlPath, bytes.NewBufferString(form.Encode()))
+//nolint:unparam //unparam http.Header is kept for future extensibility
+func (ts *testServer) postForm(
+	t *testing.T,
+	urlPath string,
+	form url.Values,
+) (int, http.Header, string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx,
+		http.MethodPost,
+		ts.URL+urlPath,
+		bytes.NewBufferString(form.Encode()),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
