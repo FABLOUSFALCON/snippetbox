@@ -1,0 +1,200 @@
+## Understanding SQL Files in This Project
+
+### 1. schema.sql - The Main Database Schema
+
+**What it is:**
+- A plain SQL file with CREATE TABLE statements
+- Defines your database structure (tables, indexes, constraints)
+- Contains sample data (INSERT statements)
+
+**How it works:**
+```bash
+# This is just a text file with SQL commands
+# PostgreSQL reads it and executes each command
+psql -U web -d snippetbox -f schema.sql
+```
+
+**When you run it:**
+- Manually when setting up database first time
+- OR automatically via setup_db.sh script
+- NOT by Go code - it's a one-time setup thing
+
+**Go doesn't run this!** Go only connects to database AFTER tables exist.
+
+---
+
+### 2. setup_db.sh - The Setup Script
+
+**What it does (step by step):**
+
+```bash
+# Step 1: Connect to PostgreSQL as superuser
+psql -U postgres
+
+# Step 2: Create database
+CREATE DATABASE snippetbox;
+
+# Step 3: Create user with password
+CREATE USER web WITH PASSWORD 'pass';
+
+# Step 4: Give user permission to access database
+GRANT CONNECT ON DATABASE snippetbox TO web;
+
+# Step 5: Run schema.sql to create tables
+psql -U web -d snippetbox -f schema.sql
+```
+
+**This is NOT magic!** It's just automating what you'd type manually.
+
+**You run it once:**
+```bash
+./setup_db.sh   # Creates everything
+```
+
+**Then never again** (unless you want to reset database).
+
+---
+
+### 3. Test SQL Files (testdata/setup.sql and teardown.sql)
+
+**How Go tests use them:**
+
+```go
+func newTestDB(t *testing.T) *pgxpool.Pool {
+    // 1. Connect to test database
+    db, _ := pgxpool.New(ctx, "postgres://test_web:pass@localhost/test_snippetbox")
+    
+    // 2. Read setup.sql file
+    setupSQL, _ := os.ReadFile("./testdata/setup.sql")
+    
+    // 3. Execute it (creates tables)
+    db.Exec(ctx, string(setupSQL))
+    
+    // 4. Register cleanup (runs after test)
+    t.Cleanup(func() {
+        teardownSQL, _ := os.ReadFile("./testdata/teardown.sql")
+        db.Exec(ctx, string(teardownSQL))  // Drops tables
+        db.Close()
+    })
+    
+    return db
+}
+```
+
+**Each test:**
+1. Creates tables (setup.sql)
+2. Runs test
+3. Drops tables (teardown.sql)
+4. Cleans up
+
+**This happens automatically** when you run `go test`.
+
+---
+
+### Why This Separation?
+
+**schema.sql** = One-time production setup
+**setup_db.sh** = Automates database creation + runs schema.sql
+**testdata/*.sql** = Testing only, runs/cleans automatically
+
+**Flow:**
+```
+First time setup:
+./setup_db.sh  →  Creates DB + runs schema.sql  →  Tables exist
+
+Run app:
+./web  →  Connects to existing database  →  Reads/writes data
+
+Run tests:
+go test  →  Uses testdata/setup.sql  →  Creates temp tables  →  Runs tests  →  Drops tables
+```
+
+---
+
+### Your Configuration (Flag + Env)
+
+**Is this good? YES! Here's why:**
+
+```go
+func parseFlags() config {
+    // 1. Default value (for local dev)
+    dsn := flag.String("dsn", "postgres://web:pass@localhost:5432/snippetbox?sslmode=disable", "...")
+    
+    flag.Parse()
+    
+    dsnValue := *dsn
+    
+    // 2. Environment variable (for production)
+    if dsnValue == "" {
+        dsnValue = os.Getenv("DATABASE_URL")
+    }
+    
+    // 3. Default fallback
+    if dsnValue == "" {
+        dsnValue = "postgres://web:pass@localhost:5432/snippetbox?sslmode=disable"
+    }
+    
+    return config{dsn: dsnValue}
+}
+```
+
+**Priority (highest to lowest):**
+1. `-dsn` flag (explicit override)
+2. `DATABASE_URL` env var (cloud platforms)
+3. Default hardcoded value (local dev)
+
+**Real-world usage:**
+
+```bash
+# Local dev - just works
+./web
+
+# Testing different database
+./web -dsn="postgres://user:pass@localhost/other_db"
+
+# Production (Render/Heroku)
+export DATABASE_URL="postgres://cloud-host/prod-db"
+./web   # Uses env var automatically
+
+# Override env var temporarily
+./web -dsn="postgres://localhost/dev"  # Flag beats env var
+```
+
+**This pattern is used by:**
+- Heroku (DATABASE_URL)
+- Render (DATABASE_URL)
+- Railway (DATABASE_URL)
+- Most 12-factor apps
+
+**Benefits:**
+✅ No config needed locally (defaults work)
+✅ Production uses secure env vars
+✅ Can override anything when debugging
+✅ No secrets in code
+✅ Works everywhere (local, Docker, cloud)
+
+---
+
+### Summary
+
+**Files you interact with:**
+- `setup_db.sh` - Run once to setup database
+- `schema.sql` - Reference for database structure
+
+**Files you DON'T touch:**
+- `testdata/*.sql` - Used by tests automatically
+
+**How to use:**
+```bash
+# Setup (once)
+./setup_db.sh
+
+# Run app (always)
+./web
+
+# Deploy (cloud)
+# Just set DATABASE_URL env var
+# App figures out the rest
+```
+
+No magic, just good patterns! 🎯

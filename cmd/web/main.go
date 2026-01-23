@@ -17,10 +17,11 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/FABLOUSFALCON/snippetbox/internal/models"
-	"github.com/alexedwards/scs/mysqlstore"
+	"github.com/alexedwards/scs/postgresstore"
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-playground/form/v4"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 /* =========================
@@ -33,21 +34,36 @@ type config struct {
 	debug    bool
 	certFile string
 	keyFile  string
+	useTLS   bool
 }
 
 func parseFlags() config {
 	addr := flag.String("addr", ":4001", "HTTP network address")
-	dsn := flag.String("dsn", "web:lolamancer@/snippetbox?parseTime=true", "MySQL data source name")
+	dsn := flag.String("dsn", "postgres://web:pass@localhost:5432/snippetbox?sslmode=disable", "PostgreSQL data source name")
 	debug := flag.Bool("debug", false, "Enable debug mode")
+	certFile := flag.String("cert", "./tls/localhost+1.pem", "TLS certificate file path")
+	keyFile := flag.String("key", "./tls/localhost+1-key.pem", "TLS key file path")
+	useTLS := flag.Bool("tls", false, "Enable TLS (use false for cloud platforms like Render)")
 
 	flag.Parse()
 
+	// Get DSN from environment variable if not provided as flag
+	dsnValue := *dsn
+	if dsnValue == "" {
+		dsnValue = os.Getenv("DATABASE_URL")
+		if dsnValue == "" {
+			// Fallback to default local DSN
+			dsnValue = "postgres://web:pass@localhost:5432/snippetbox?sslmode=disable"
+		}
+	}
+
 	return config{
 		addr:     *addr,
-		dsn:      *dsn,
+		dsn:      dsnValue,
 		debug:    *debug,
-		certFile: "./tls/localhost+1.pem",
-		keyFile:  "./tls/localhost+1-key.pem",
+		certFile: *certFile,
+		keyFile:  *keyFile,
+		useTLS:   *useTLS,
 	}
 }
 
@@ -63,6 +79,7 @@ type application struct {
 	templateCache  map[string]*template.Template
 	formDecoder    *form.Decoder
 	sessionManager *scs.SessionManager
+	db             *pgxpool.Pool
 }
 
 /* =========================
@@ -96,13 +113,19 @@ func run() error {
 	}
 	defer closeDB(logger, db)
 
-	app := newApplication(cfg, logger, templateCache, db)
+	app := newApplication(cfg, logger, templateCache, db, cfg.dsn)
 
 	srv := newHTTPServer(cfg, app, logger)
 
-	logger.Info("starting server", slog.String("addr", cfg.addr))
+	logger.Info("starting server", slog.String("addr", cfg.addr), slog.Bool("tls", cfg.useTLS))
 
-	err = srv.ListenAndServeTLS(cfg.certFile, cfg.keyFile)
+	// Use TLS only if configured (local dev), otherwise use plain HTTP (Render handles SSL)
+	if cfg.useTLS {
+		err = srv.ListenAndServeTLS(cfg.certFile, cfg.keyFile)
+	} else {
+		err = srv.ListenAndServe()
+	}
+
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -156,14 +179,26 @@ func newApplication(
 	cfg config,
 	logger *slog.Logger,
 	templateCache map[string]*template.Template,
-	db *sql.DB,
+	db *pgxpool.Pool,
+	dsn string,
 ) *application {
 	formDecoder := form.NewDecoder()
 
+	// Create sql.DB connection for session store (postgresstore requires it)
+	sessionDB, err := sql.Open("pgx", dsn)
+	if err != nil {
+		logger.Error("failed to open session database", slog.String("err", err.Error()))
+		// Fall back to memory store if DB connection fails
+		sessionDB = nil
+	}
+
 	sessionManager := scs.New()
-	sessionManager.Store = mysqlstore.New(db)
+	if sessionDB != nil {
+		sessionManager.Store = postgresstore.NewWithCleanupInterval(sessionDB, 30*time.Minute)
+	}
 	sessionManager.Lifetime = 12 * time.Hour
-	sessionManager.Cookie.Secure = true
+	// Only set secure cookies when using TLS
+	sessionManager.Cookie.Secure = cfg.useTLS
 
 	return &application{
 		debug:          cfg.debug,
@@ -173,6 +208,7 @@ func newApplication(
 		templateCache:  templateCache,
 		formDecoder:    formDecoder,
 		sessionManager: sessionManager,
+		db:             db,
 	}
 }
 
@@ -206,25 +242,39 @@ func newHTTPServer(
    Database
    ========================= */
 
-func openDB(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+func openDB(dsn string) (*pgxpool.Pool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Parse config for connection pooling
+	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Set pool configuration for performance
+	config.MaxConns = 25
+	config.MinConns = 5
+	config.MaxConnLifetime = time.Hour
+	config.MaxConnIdleTime = 30 * time.Minute
+	config.HealthCheckPeriod = time.Minute
 
-	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+	// Create pool
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
 		return nil, err
 	}
 
-	return db, nil
+	// Verify connection
+	if err = pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	return pool, nil
 }
 
-func closeDB(logger *slog.Logger, db *sql.DB) {
-	if err := db.Close(); err != nil {
-		logger.Error("closing database", slog.String("err", err.Error()))
-	}
+func closeDB(logger *slog.Logger, db *pgxpool.Pool) {
+	db.Close()
+	logger.Info("database connection pool closed")
 }

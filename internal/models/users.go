@@ -2,13 +2,13 @@ package models
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,7 +29,7 @@ type User struct {
 }
 
 type UserModel struct {
-	DB *sql.DB
+	DB *pgxpool.Pool
 }
 
 func (m *UserModel) Insert(name, email, password string) error {
@@ -39,17 +39,15 @@ func (m *UserModel) Insert(name, email, password string) error {
 	}
 
 	stmt := `INSERT INTO users (name, email, hashed_password, created)
-	         VALUES (?, ?, ?, UTC_TIMESTAMP())`
+	         VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC')`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err = m.DB.ExecContext(ctx, stmt, name, email, hashedPassword)
+	_, err = m.DB.Exec(ctx, stmt, name, email, hashedPassword)
 	if err != nil {
-		var mySQLError *mysql.MySQLError
-		if errors.As(err, &mySQLError) &&
-			mySQLError.Number == 1062 &&
-			strings.Contains(mySQLError.Message, "users_uc_email") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "users_uc_email" {
 			return ErrDuplicateEmail
 		}
 
@@ -63,14 +61,14 @@ func (m *UserModel) Authenticate(email, password string) (int, error) {
 	var id int
 	var hashedPassword []byte
 
-	stmt := `SELECT id, hashed_password FROM users WHERE email = ?`
+	stmt := `SELECT id, hashed_password FROM users WHERE email = $1`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := m.DB.QueryRowContext(ctx, stmt, email).Scan(&id, &hashedPassword)
+	err := m.DB.QueryRow(ctx, stmt, email).Scan(&id, &hashedPassword)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrInvalidCredentials
 		}
 		return 0, fmt.Errorf("querying user credentials: %w", err)
@@ -89,12 +87,12 @@ func (m *UserModel) Authenticate(email, password string) (int, error) {
 func (m *UserModel) Exists(id int) (bool, error) {
 	var exists bool
 
-	stmt := `SELECT EXISTS(SELECT true FROM users WHERE id = ?)`
+	stmt := `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := m.DB.QueryRowContext(ctx, stmt, id).Scan(&exists)
+	err := m.DB.QueryRow(ctx, stmt, id).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("checking user existence: %w", err)
 	}
@@ -105,15 +103,15 @@ func (m *UserModel) Exists(id int) (bool, error) {
 func (m *UserModel) Get(id int) (User, error) {
 	var user User
 
-	stmt := `SELECT id, name, email, created FROM users WHERE id = ?`
+	stmt := `SELECT id, name, email, created FROM users WHERE id = $1`
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := m.DB.QueryRowContext(ctx, stmt, id).
+	err := m.DB.QueryRow(ctx, stmt, id).
 		Scan(&user.ID, &user.Name, &user.Email, &user.Created)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrNoRecord
 		}
 		return User{}, fmt.Errorf("fetching user: %w", err)
@@ -128,8 +126,8 @@ func (m *UserModel) PasswordUpdate(id int, currentPassword, newPassword string) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stmt := `SELECT hashed_password FROM users WHERE id = ?`
-	err := m.DB.QueryRowContext(ctx, stmt, id).Scan(&currentHashedPassword)
+	stmt := `SELECT hashed_password FROM users WHERE id = $1`
+	err := m.DB.QueryRow(ctx, stmt, id).Scan(&currentHashedPassword)
 	if err != nil {
 		return fmt.Errorf("fetching current password: %w", err)
 	}
@@ -146,9 +144,9 @@ func (m *UserModel) PasswordUpdate(id int, currentPassword, newPassword string) 
 		return fmt.Errorf("hashing new password: %w", err)
 	}
 
-	stmt = `UPDATE users SET hashed_password = ? WHERE id = ?`
+	stmt = `UPDATE users SET hashed_password = $1 WHERE id = $2`
 
-	_, err = m.DB.ExecContext(ctx, stmt, newHashedPassword, id)
+	_, err = m.DB.Exec(ctx, stmt, newHashedPassword, id)
 	if err != nil {
 		return fmt.Errorf("updating password: %w", err)
 	}

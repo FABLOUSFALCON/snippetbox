@@ -3,9 +3,11 @@ package models
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SnippetModelInterface interface {
@@ -23,41 +25,38 @@ type Snippet struct {
 }
 
 type SnippetModel struct {
-	DB *sql.DB
+	DB *pgxpool.Pool
 }
 
 func (m *SnippetModel) Insert(ctx context.Context, title, content string, expires int) (int, error) {
 	stmt := `
 		INSERT INTO snippets (title, content, created, expires)
-		VALUES (?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY))
+		VALUES ($1, $2, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC' + $3 * INTERVAL '1 day')
+		RETURNING id
 	`
 
-	result, err := m.DB.ExecContext(ctx, stmt, title, content, expires)
+	var id int
+	err := m.DB.QueryRow(ctx, stmt, title, content, expires).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-
-	return int(id), nil
+	return id, nil
 }
 
 func (m *SnippetModel) Get(ctx context.Context, id int) (Snippet, error) {
 	stmt := `
 		SELECT id, title, content, created, expires
 		FROM snippets
-		WHERE expires > UTC_TIMESTAMP() AND id = ?
+		WHERE expires > NOW() AT TIME ZONE 'UTC' AND id = $1
 	`
 
-	row := m.DB.QueryRowContext(ctx, stmt, id)
+	row := m.DB.QueryRow(ctx, stmt, id)
 
 	var s Snippet
 	err := row.Scan(&s.ID, &s.Title, &s.Content, &s.Created, &s.Expires)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return Snippet{}, ErrNoRecord
 		}
 		return Snippet{}, err
@@ -70,18 +69,16 @@ func (m *SnippetModel) Latest(ctx context.Context) ([]Snippet, error) {
 	stmt := `
 		SELECT id, title, content, created, expires
 		FROM snippets
-		WHERE expires > UTC_TIMESTAMP()
+		WHERE expires > NOW() AT TIME ZONE 'UTC'
 		ORDER BY id DESC
 		LIMIT 10
 	`
 
-	rows, err := m.DB.QueryContext(ctx, stmt)
+	rows, err := m.DB.Query(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
+	defer rows.Close()
 
 	var snippets []Snippet
 
