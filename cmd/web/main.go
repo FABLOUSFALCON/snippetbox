@@ -39,7 +39,7 @@ type config struct {
 
 func parseFlags() config {
 	addr := flag.String("addr", ":4001", "HTTP network address")
-	dsn := flag.String("dsn", "postgres://web:pass@localhost:5432/snippetbox?sslmode=disable", "PostgreSQL data source name")
+	dsn := flag.String("dsn", "", "PostgreSQL data source name")
 	debug := flag.Bool("debug", false, "Enable debug mode")
 	certFile := flag.String("cert", "./tls/localhost+1.pem", "TLS certificate file path")
 	keyFile := flag.String("key", "./tls/localhost+1-key.pem", "TLS key file path")
@@ -47,7 +47,7 @@ func parseFlags() config {
 
 	flag.Parse()
 
-	// Get DSN from environment variable if not provided as flag
+	// Priority: 1. Flag, 2. Env var, 3. Default
 	dsnValue := *dsn
 	if dsnValue == "" {
 		dsnValue = os.Getenv("DATABASE_URL")
